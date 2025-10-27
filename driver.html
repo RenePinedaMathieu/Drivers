@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Editor Drivers Falabella</title>
+<style>
+  body { font-family: system-ui, sans-serif; background:#f7f8fa; padding:20px; color:#222; }
+  .card { background:#fff; border-radius:12px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.08); max-width:1100px; margin:auto; }
+  h1 { font-size:1.3rem; margin:0 0 12px; }
+  select, input[type="file"], button {
+    padding:8px 12px; border-radius:8px; border:1px solid #ccc; font-size:14px;
+  }
+  select { min-width:200px; }
+  button { background:#4f46e5; color:white; border:none; cursor:pointer; }
+  button:disabled { background:#aaa; cursor:not-allowed; }
+  table { border-collapse:collapse; width:100%; margin-top:16px; }
+  th, td { border:1px solid #ddd; padding:6px 8px; text-align:left; }
+  th { background:#f0f0f5; position:sticky; top:0; }
+  td[contenteditable="true"] { background:#fffdf0; }
+  td:focus { outline:2px solid #4f46e5; background:#eef; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Editor de Drivers (Distribución Empresas)</h1>
+  <input type="file" id="fileInput" accept=".xlsx,.xls" />
+  <div style="margin:12px 0;">
+    <label>Orden Estadística:</label>
+    <select id="ordenSelect"><option value="">-- Seleccione --</option></select>
+    <label style="margin-left:12px;">Nombre Driver:</label>
+    <select id="driverSelect"><option value="">-- Seleccione --</option></select>
+  </div>
+  <button id="downloadBtn" disabled>Descargar Excel modificado</button>
+  <table id="table"></table>
+</div>
+
+<!-- SheetJS -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<script>
+let workbook, dataMatrix, empresasCols = [], headers = [];
+let fullData = [];
+let fileName = "resultado_modificado.xlsx";
+
+const fileInput = document.getElementById("fileInput");
+const ordenSelect = document.getElementById("ordenSelect");
+const driverSelect = document.getElementById("driverSelect");
+const table = document.getElementById("table");
+const downloadBtn = document.getElementById("downloadBtn");
+
+// Leer archivo Excel
+fileInput.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const arrayBuffer = await file.arrayBuffer();
+  workbook = XLSX.read(arrayBuffer, { type: "array" });
+  const ws = workbook.Sheets[workbook.SheetNames[0]];
+  fullData = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+  if (fullData.length === 0) return alert("El Excel está vacío.");
+
+  headers = Object.keys(fullData[0]);
+  empresasCols = headers.filter(h => h.toLowerCase().startsWith("empresa"));
+
+  // llenar dropdowns
+  const ordenes = [...new Set(fullData.map(r => r.OrdenEstadistica))].sort();
+  const drivers = [...new Set(fullData.map(r => r.NombreDriver))].sort();
+
+  ordenSelect.innerHTML = "<option value=''>-- Seleccione --</option>" + ordenes.map(o => `<option>${o}</option>`).join("");
+  driverSelect.innerHTML = "<option value=''>-- Seleccione --</option>" + drivers.map(d => `<option>${d}</option>`).join("");
+  downloadBtn.disabled = false;
+  table.innerHTML = "";
+});
+
+// Filtrado cruzado
+ordenSelect.addEventListener("change", () => {
+  const ordenSel = ordenSelect.value;
+  const filteredDrivers = [...new Set(fullData.filter(r => !ordenSel || r.OrdenEstadistica === ordenSel).map(r => r.NombreDriver))];
+  driverSelect.innerHTML = "<option value=''>-- Seleccione --</option>" + filteredDrivers.map(d => `<option>${d}</option>`).join("");
+  renderTable();
+});
+
+driverSelect.addEventListener("change", () => {
+  renderTable();
+});
+
+function renderTable() {
+  const ordenSel = ordenSelect.value;
+  const driverSel = driverSelect.value;
+
+  let filtered = fullData.filter(r =>
+    (!ordenSel || r.OrdenEstadistica === ordenSel) &&
+    (!driverSel || r.NombreDriver === driverSel)
+  );
+
+  if (filtered.length === 0) {
+    table.innerHTML = "<tr><td>No hay registros.</td></tr>";
+    return;
+  }
+
+  const cols = ["OrdenEstadistica", "NombreDriver", ...empresasCols];
+  const thead = "<thead><tr>" + cols.map(c => `<th>${c}</th>`).join("") + "</tr></thead>";
+  const tbody = filtered.map((row, idx) => {
+    return `<tr>${cols.map(c => 
+      empresasCols.includes(c)
+        ? `<td contenteditable="true" data-index="${fullData.indexOf(row)}" data-col="${c}">${row[c]}</td>`
+        : `<td>${row[c]}</td>`
+    ).join("")}</tr>`;
+  }).join("");
+  table.innerHTML = thead + "<tbody>" + tbody + "</tbody>";
+
+  // registrar cambios
+  table.querySelectorAll("td[contenteditable='true']").forEach(td => {
+    td.addEventListener("input", e => {
+      const i = parseInt(e.target.dataset.index);
+      const col = e.target.dataset.col;
+      fullData[i][col] = e.target.textContent.trim();
+    });
+  });
+}
+
+// Descargar Excel modificado
+downloadBtn.addEventListener("click", () => {
+  const ws = XLSX.utils.json_to_sheet(fullData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Datos");
+  XLSX.writeFile(wb, fileName);
+});
+</script>
+</body>
+</html>
