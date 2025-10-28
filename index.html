@@ -5,30 +5,31 @@
   <title>Editor Drivers Falabella</title>
   <style>
     body { font-family: system-ui, sans-serif; background:#f7f8fa; padding:20px; color:#222; }
-    .card { background:#fff; border-radius:12px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.08); max-width:1100px; margin:auto; }
+    .card { background:#fff; border-radius:12px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.08); max-width:1000px; margin:auto; }
     h1 { font-size:1.3rem; margin:0 0 12px; }
     select, input[type="file"], button {
       padding:8px 12px; border-radius:8px; border:1px solid #ccc; font-size:14px;
     }
-    select { min-width:200px; }
+    select { min-width:180px; }
     button { background:#4f46e5; color:white; border:none; cursor:pointer; }
     button:disabled { background:#aaa; cursor:not-allowed; }
     table { border-collapse:collapse; width:100%; margin-top:16px; }
-    th, td { border:1px solid #ddd; padding:6px 8px; text-align:left; }
-    th { background:#f0f0f5; position:sticky; top:0; }
+    th, td { border:1px solid #ddd; padding:6px 8px; text-align:center; }
+    th { background:#f0f0f5; }
     td[contenteditable="true"] { background:#fffdf0; }
     td:focus { outline:2px solid #4f46e5; background:#eef; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>Editor de Drivers (Distribución Empresas)</h1>
+    <h1>Editor de Drivers (Distribución por Empresa)</h1>
     <input type="file" id="fileInput" accept=".xlsx,.xls" />
     <div style="margin:12px 0;">
       <label>Orden Estadística:</label>
       <select id="ordenSelect"><option value="">-- Seleccione --</option></select>
       <label style="margin-left:12px;">Nombre Driver:</label>
       <select id="driverSelect"><option value="">-- Seleccione --</option></select>
+      <button id="nuevoDriverBtn" disabled>Agregar Driver</button>
     </div>
     <button id="downloadBtn" disabled>Descargar Excel modificado</button>
     <table id="table"></table>
@@ -38,14 +39,15 @@
 
   <script>
     let workbook, fullData = [], empresasCols = [], headers = [];
-    const fileName = "resultado_modificado.xlsx";
 
     const fileInput = document.getElementById("fileInput");
     const ordenSelect = document.getElementById("ordenSelect");
     const driverSelect = document.getElementById("driverSelect");
-    const table = document.getElementById("table");
+    const nuevoDriverBtn = document.getElementById("nuevoDriverBtn");
     const downloadBtn = document.getElementById("downloadBtn");
+    const table = document.getElementById("table");
 
+    // --- Cargar Excel ---
     fileInput.addEventListener("change", async (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -53,53 +55,81 @@
       workbook = XLSX.read(arrayBuffer, { type: "array" });
       const ws = workbook.Sheets[workbook.SheetNames[0]];
       fullData = XLSX.utils.sheet_to_json(ws, { defval: "" });
-
       if (fullData.length === 0) return alert("El Excel está vacío.");
 
       headers = Object.keys(fullData[0]);
       empresasCols = headers.filter(h => h.toLowerCase().startsWith("empresa"));
 
       const ordenes = [...new Set(fullData.map(r => r.OrdenEstadistica))].sort();
-      const drivers = [...new Set(fullData.map(r => r.NombreDriver))].sort();
-
       ordenSelect.innerHTML = "<option value=''>-- Seleccione --</option>" + ordenes.map(o => `<option>${o}</option>`).join("");
-      driverSelect.innerHTML = "<option value=''>-- Seleccione --</option>" + drivers.map(d => `<option>${d}</option>`).join("");
+      driverSelect.innerHTML = "<option value=''>-- Seleccione --</option>";
+
       downloadBtn.disabled = false;
       table.innerHTML = "";
     });
 
-    // NUEVA FUNCIÓN: agrega columnas de empresas si faltan
-    function agregarEmpresasSiFaltan(empresas) {
-      empresas.forEach(nombre => {
-        const colName = nombre.trim();
-        if (colName && !empresasCols.includes(colName)) {
-          empresasCols.push(colName);
-          fullData.forEach(row => row[colName] = row[colName] || "");
-        }
-      });
-    }
-
+    // --- Selección de Orden ---
     ordenSelect.addEventListener("change", () => {
-      const ordenSel = ordenSelect.value;
-      if (!ordenSel) return;
+      const orden = ordenSelect.value;
+      if (!orden) return;
 
-      // Pregunta a qué negocios impacta
-      const input = prompt(`¿A qué negocios impacta la orden "${ordenSel}"?\n\nEscribe los nombres separados por coma (por ejemplo: Sodimac, Tottus, Falabella Retail):`);
-      if (input) {
-        const empresas = input.split(",").map(e => e.trim()).filter(Boolean);
-        agregarEmpresasSiFaltan(empresas);
-      }
+      const drivers = [...new Set(fullData.filter(r => r.OrdenEstadistica === orden).map(r => r.NombreDriver))].sort();
+      driverSelect.innerHTML = "<option value=''>-- Seleccione --</option>" + drivers.map(d => `<option>${d}</option>`).join("");
+      nuevoDriverBtn.disabled = false;
+      table.innerHTML = "";
+    });
 
-      // Actualiza los drivers disponibles
-      const filteredDrivers = [...new Set(fullData.filter(r => !ordenSel || r.OrdenEstadistica === ordenSel).map(r => r.NombreDriver))];
-      driverSelect.innerHTML = "<option value=''>-- Seleccione --</option>" + filteredDrivers.map(d => `<option>${d}</option>`).join("");
+    // --- Selección de Driver ---
+    driverSelect.addEventListener("change", renderTable);
+
+    // --- Agregar nuevo driver ---
+    nuevoDriverBtn.addEventListener("click", () => {
+      const orden = ordenSelect.value;
+      if (!orden) return alert("Seleccione una orden primero.");
+      const nombre = prompt("Ingrese el nombre del nuevo driver:");
+      if (!nombre) return;
+      const nuevaFila = { OrdenEstadistica: orden, NombreDriver: nombre };
+      empresasCols.forEach(c => nuevaFila[c] = 0);
+      fullData.push(nuevaFila);
+      const opt = document.createElement("option");
+      opt.textContent = nombre;
+      opt.value = nombre;
+      driverSelect.appendChild(opt);
+      driverSelect.value = nombre;
       renderTable();
     });
 
-    driverSelect.addEventListener("change", renderTable);
-
+    // --- Renderizar tabla editable ---
     function renderTable() {
       const ordenSel = ordenSelect.value;
       const driverSel = driverSelect.value;
+      if (!ordenSel || !driverSel) return;
 
-      let filtered = fullData.filter
+      const row = fullData.find(r => r.OrdenEstadistica === ordenSel && r.NombreDriver === driverSel);
+      if (!row) return alert("No se encontró combinación.");
+
+      let html = "<tr><th>Empresa</th><th>Porcentaje</th></tr>";
+      empresasCols.forEach(emp => {
+        html += `<tr><td>${emp}</td><td contenteditable="true" data-col="${emp}">${row[emp]}</td></tr>`;
+      });
+      table.innerHTML = html;
+
+      table.querySelectorAll("td[contenteditable=true]").forEach(td => {
+        td.addEventListener("input", () => {
+          const col = td.dataset.col;
+          const val = parseFloat(td.innerText) || 0;
+          row[col] = val;
+        });
+      });
+    }
+
+    // --- Descargar Excel modificado ---
+    downloadBtn.addEventListener("click", () => {
+      const ws = XLSX.utils.json_to_sheet(fullData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Drivers");
+      XLSX.writeFile(wb, "drivers_modificado.xlsx");
+    });
+  </script>
+</body>
+</html>
