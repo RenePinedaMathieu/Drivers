@@ -7,45 +7,53 @@
     body { font-family: system-ui, sans-serif; background:#f7f8fa; padding:20px; color:#222; }
     .card { background:#fff; border-radius:12px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.08); max-width:1000px; margin:auto; }
     h1 { font-size:1.3rem; margin:0 0 12px; }
-    select, input[type="file"], button {
+    input[type="file"], button {
       padding:8px 12px; border-radius:8px; border:1px solid #ccc; font-size:14px;
     }
-    select { min-width:180px; }
     button { background:#4f46e5; color:white; border:none; cursor:pointer; }
     button:disabled { background:#aaa; cursor:not-allowed; }
+
+    .scroll-list { border:1px solid #ccc; border-radius:8px; max-height:140px; overflow-y:auto; padding:6px; background:#fff; margin:6px 0; }
+    .scroll-item { padding:6px; border-radius:6px; cursor:pointer; }
+    .scroll-item:hover { background:#f0f0f5; }
+    .scroll-item.active { background:#4f46e5; color:white; }
+
     table { border-collapse:collapse; width:100%; margin-top:16px; }
     th, td { border:1px solid #ddd; padding:6px 8px; text-align:center; }
     th { background:#f0f0f5; }
     td[contenteditable="true"] { background:#fffdf0; }
     td:focus { outline:2px solid #4f46e5; background:#eef; }
+    #warning { color:#b91c1c; font-weight:bold; margin-top:8px; }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Editor de Drivers (Distribución por Empresa)</h1>
     <input type="file" id="fileInput" accept=".xlsx,.xls" />
-    <div style="margin:12px 0;">
-      <label>Orden Estadística:</label>
-      <select id="ordenSelect"><option value="">-- Seleccione --</option></select>
-      <label style="margin-left:12px;">Nombre Driver:</label>
-      <select id="driverSelect"><option value="">-- Seleccione --</option></select>
+    <div style="margin-top:12px;">
+      <strong>Órdenes Estadísticas</strong>
+      <div id="ordenList" class="scroll-list"></div>
+      <strong>Drivers</strong>
+      <div id="driverList" class="scroll-list"></div>
       <button id="nuevoDriverBtn" disabled>Agregar Driver</button>
     </div>
     <button id="downloadBtn" disabled>Descargar Excel modificado</button>
+    <div id="warning"></div>
     <table id="table"></table>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
   <script>
     let workbook, fullData = [], empresasCols = [], headers = [];
+    let ordenSeleccionada = "", driverSeleccionado = "";
 
     const fileInput = document.getElementById("fileInput");
-    const ordenSelect = document.getElementById("ordenSelect");
-    const driverSelect = document.getElementById("driverSelect");
+    const ordenList = document.getElementById("ordenList");
+    const driverList = document.getElementById("driverList");
     const nuevoDriverBtn = document.getElementById("nuevoDriverBtn");
     const downloadBtn = document.getElementById("downloadBtn");
     const table = document.getElementById("table");
+    const warning = document.getElementById("warning");
 
     // --- Cargar Excel ---
     fileInput.addEventListener("change", async (e) => {
@@ -61,66 +69,83 @@
       empresasCols = headers.filter(h => h.toLowerCase().startsWith("empresa"));
 
       const ordenes = [...new Set(fullData.map(r => r.OrdenEstadistica))].sort();
-      ordenSelect.innerHTML = "<option value=''>-- Seleccione --</option>" + ordenes.map(o => `<option>${o}</option>`).join("");
-      driverSelect.innerHTML = "<option value=''>-- Seleccione --</option>";
-
-      downloadBtn.disabled = false;
+      ordenList.innerHTML = ordenes.map(o => `<div class="scroll-item" data-orden="${o}">${o}</div>`).join("");
+      driverList.innerHTML = "";
       table.innerHTML = "";
+      downloadBtn.disabled = false;
+
+      ordenList.querySelectorAll(".scroll-item").forEach(el => {
+        el.addEventListener("click", () => {
+          ordenSeleccionada = el.dataset.orden;
+          document.querySelectorAll("#ordenList .scroll-item").forEach(x => x.classList.remove("active"));
+          el.classList.add("active");
+          renderDrivers();
+        });
+      });
     });
 
-    // --- Selección de Orden ---
-    ordenSelect.addEventListener("change", () => {
-      const orden = ordenSelect.value;
-      if (!orden) return;
-
-      const drivers = [...new Set(fullData.filter(r => r.OrdenEstadistica === orden).map(r => r.NombreDriver))].sort();
-      driverSelect.innerHTML = "<option value=''>-- Seleccione --</option>" + drivers.map(d => `<option>${d}</option>`).join("");
+    // --- Renderizar lista de drivers ---
+    function renderDrivers() {
+      const drivers = [...new Set(fullData.filter(r => r.OrdenEstadistica === ordenSeleccionada).map(r => r.NombreDriver))].sort();
+      driverList.innerHTML = drivers.map(d => `<div class="scroll-item" data-driver="${d}">${d}</div>`).join("");
       nuevoDriverBtn.disabled = false;
       table.innerHTML = "";
-    });
-
-    // --- Selección de Driver ---
-    driverSelect.addEventListener("change", renderTable);
+      driverList.querySelectorAll(".scroll-item").forEach(el => {
+        el.addEventListener("click", () => {
+          driverSeleccionado = el.dataset.driver;
+          document.querySelectorAll("#driverList .scroll-item").forEach(x => x.classList.remove("active"));
+          el.classList.add("active");
+          renderTable();
+        });
+      });
+    }
 
     // --- Agregar nuevo driver ---
     nuevoDriverBtn.addEventListener("click", () => {
-      const orden = ordenSelect.value;
-      if (!orden) return alert("Seleccione una orden primero.");
+      if (!ordenSeleccionada) return alert("Seleccione una orden primero.");
       const nombre = prompt("Ingrese el nombre del nuevo driver:");
       if (!nombre) return;
-      const nuevaFila = { OrdenEstadistica: orden, NombreDriver: nombre };
+      const nuevaFila = { OrdenEstadistica: ordenSeleccionada, NombreDriver: nombre };
       empresasCols.forEach(c => nuevaFila[c] = 0);
       fullData.push(nuevaFila);
-      const opt = document.createElement("option");
-      opt.textContent = nombre;
-      opt.value = nombre;
-      driverSelect.appendChild(opt);
-      driverSelect.value = nombre;
-      renderTable();
+      renderDrivers();
     });
 
     // --- Renderizar tabla editable ---
     function renderTable() {
-      const ordenSel = ordenSelect.value;
-      const driverSel = driverSelect.value;
-      if (!ordenSel || !driverSel) return;
-
-      const row = fullData.find(r => r.OrdenEstadistica === ordenSel && r.NombreDriver === driverSel);
+      const row = fullData.find(r => r.OrdenEstadistica === ordenSeleccionada && r.NombreDriver === driverSeleccionado);
       if (!row) return alert("No se encontró combinación.");
 
-      let html = "<tr><th>Empresa</th><th>Porcentaje</th></tr>";
+      let html = "<tr><th>Empresa</th><th>Porcentaje (%)</th></tr>";
       empresasCols.forEach(emp => {
-        html += `<tr><td>${emp}</td><td contenteditable="true" data-col="${emp}">${row[emp]}</td></tr>`;
+        html += `<tr><td>${emp}</td><td contenteditable="true" data-col="${emp}">${row[emp] || 0}</td></tr>`;
       });
       table.innerHTML = html;
 
       table.querySelectorAll("td[contenteditable=true]").forEach(td => {
         td.addEventListener("input", () => {
           const col = td.dataset.col;
-          const val = parseFloat(td.innerText) || 0;
+          const val = parseFloat(td.innerText.replace('%','')) || 0;
           row[col] = val;
+          validarPorcentajeTotal(row);
         });
       });
+
+      validarPorcentajeTotal(row);
+    }
+
+    // --- Validar que el total no supere 100 ---
+    function validarPorcentajeTotal(row) {
+      const total = empresasCols.reduce((s, c) => s + (parseFloat(row[c]) || 0), 0);
+      if (total > 100.001) {
+        warning.textContent = `⚠️ El total (${total.toFixed(2)}%) supera el 100%. Corrige los valores.`;
+        warning.style.color = "#b91c1c";
+        downloadBtn.disabled = true;
+      } else {
+        warning.textContent = `Total actual: ${total.toFixed(2)}%`;
+        warning.style.color = "#16a34a";
+        downloadBtn.disabled = false;
+      }
     }
 
     // --- Descargar Excel modificado ---
@@ -133,6 +158,3 @@
   </script>
 </body>
 </html>
-
-ahora no quiero que sea un meno "dropdown", si no que una lista scrolleable para ambos.
-que los valores sean en porcentaje y que el total de los porcentajes no pueda ser mas de 100
