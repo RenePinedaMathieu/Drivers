@@ -34,13 +34,11 @@
     <table id="table"></table>
   </div>
 
-  <!-- SheetJS -->
-  https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js</script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <script>
-    let workbook, dataMatrix, empresasCols = [], headers = [];
-    let fullData = [];
-    let fileName = "resultado_modificado.xlsx";
+    let workbook, fullData = [], empresasCols = [], headers = [];
+    const fileName = "resultado_modificado.xlsx";
 
     const fileInput = document.getElementById("fileInput");
     const ordenSelect = document.getElementById("ordenSelect");
@@ -70,58 +68,38 @@
       table.innerHTML = "";
     });
 
+    // NUEVA FUNCIÓN: agrega columnas de empresas si faltan
+    function agregarEmpresasSiFaltan(empresas) {
+      empresas.forEach(nombre => {
+        const colName = nombre.trim();
+        if (colName && !empresasCols.includes(colName)) {
+          empresasCols.push(colName);
+          fullData.forEach(row => row[colName] = row[colName] || "");
+        }
+      });
+    }
+
     ordenSelect.addEventListener("change", () => {
       const ordenSel = ordenSelect.value;
+      if (!ordenSel) return;
+
+      // Pregunta a qué negocios impacta
+      const input = prompt(`¿A qué negocios impacta la orden "${ordenSel}"?\n\nEscribe los nombres separados por coma (por ejemplo: Sodimac, Tottus, Falabella Retail):`);
+      if (input) {
+        const empresas = input.split(",").map(e => e.trim()).filter(Boolean);
+        agregarEmpresasSiFaltan(empresas);
+      }
+
+      // Actualiza los drivers disponibles
       const filteredDrivers = [...new Set(fullData.filter(r => !ordenSel || r.OrdenEstadistica === ordenSel).map(r => r.NombreDriver))];
       driverSelect.innerHTML = "<option value=''>-- Seleccione --</option>" + filteredDrivers.map(d => `<option>${d}</option>`).join("");
       renderTable();
     });
 
-    driverSelect.addEventListener("change", () => {
-      renderTable();
-    });
+    driverSelect.addEventListener("change", renderTable);
 
     function renderTable() {
       const ordenSel = ordenSelect.value;
       const driverSel = driverSelect.value;
 
-      let filtered = fullData.filter(r =>
-        (!ordenSel || r.OrdenEstadistica === ordenSel) &&
-        (!driverSel || r.NombreDriver === driverSel)
-      );
-
-      if (filtered.length === 0) {
-        table.innerHTML = "<tr><td>No hay registros.</td></tr>";
-        return;
-      }
-
-      const cols = ["OrdenEstadistica", "NombreDriver", ...empresasCols];
-      const thead = "<thead><tr>" + cols.map(c => `<th>${c}</th>`).join("") + "</tr></thead>";
-      const tbody = filtered.map((row, idx) => {
-        return `<tr>${cols.map(c =>
-          empresasCols.includes(c)
-            ? `<td contenteditable="true" data-index="${fullData.indexOf(row)}" data-col="${c}">${row[c]}</td>`
-            : `<td>${row[c]}</td>`
-        ).join("")}</tr>`;
-      }).join("");
-      table.innerHTML = thead + "<tbody>" + tbody + "</tbody>";
-
-      table.querySelectorAll("td[contenteditable='true']").forEach(td => {
-        td.addEventListener("input", e => {
-          const i = parseInt(e.target.dataset.index);
-          const col = e.target.dataset.col;
-          fullData[i][col] = e.target.textContent.trim();
-        });
-      });
-    }
-
-    downloadBtn.addEventListener("click", () => {
-      const ws = XLSX.utils.json_to_sheet(fullData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Datos");
-      XLSX.writeFile(wb, fileName);
-    });
-  </script>
-</body>
-</html>
-``
+      let filtered = fullData.filter
